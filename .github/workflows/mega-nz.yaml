@@ -52,6 +52,21 @@ jobs:
     - name: List downloaded files
       run: ls -la
 
+    - name: Remove media creation date metadata
+      run: |
+        sudo apt-get install -y libimage-exiftool-perl
+        shopt -s nullglob
+        for file in *; do
+          if [[ -f "$file" ]]; then
+            exiftool -overwrite_original \
+              -CreateDate= \
+              -DateTimeOriginal= \
+              -ModifyDate= \
+              "$file" || true
+          fi
+        done
+        echo "Metadata removal complete."
+
     - name: Delete specified files 
       run: | 
         rm -f LICENSE 
@@ -72,29 +87,22 @@ jobs:
         gh release create mega-downloads5 --title "mega-downloads5" --notes "mega-downloads5" || true
         for file in *; do
           if [[ -f "$file" && "$file" != "README.md" && "$file" != ".github" && "$file" != ".gitignore" ]]; then
-            # Extract file extension
             extension="${file##*.}"
-            # Generate a random file name
             random_name=$(uuidgen)
-            # Combine the random name with the original file extension
             new_name="${random_name}.${extension}"
 
-            # Check if the new name already exists in the GitHub release
             while gh release view mega-downloads5 --json assets --jq ".assets[].name" | grep -q "$new_name"; do
               random_name=$(uuidgen)
               new_name="${random_name}.${extension}"
             done
 
-            # Check file size and split if larger than 2GB
             filesize=$(stat -c%s "$file")
             if [ "$filesize" -gt 2000000000 ]; then
               split -b 2000m "$file" "${new_name}.part_"
               for part in "${new_name}.part_"*; do
-                # Ensure the correct file size and Content-Length are set
                 part_size=$(stat -c%s "$part")
                 part_new_name="${new_name}.${part##*.}"
 
-                # Check if the part name already exists in the GitHub release
                 while gh release view mega-downloads5 --json assets --jq ".assets[].name" | grep -q "$part_new_name"; do
                   random_name=$(uuidgen)
                   new_name="${random_name}.${extension}"
@@ -105,9 +113,7 @@ jobs:
                 gh release upload "mega-downloads5" "./$part" --clobber
               done
             else
-              # Rename the file
               mv "$file" "$new_name"
-              # Upload the file
               file_size=$(stat -c%s "$new_name")
               echo "Uploading $new_name ($file_size bytes)"
               gh release upload "mega-downloads5" "./$new_name" --clobber
@@ -119,4 +125,3 @@ jobs:
 
     - name: List files after processing
       run: ls -la
-      
