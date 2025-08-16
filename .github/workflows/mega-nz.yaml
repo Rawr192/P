@@ -56,16 +56,21 @@ jobs:
       run: |
         sudo apt-get install -y libimage-exiftool-perl
         shopt -s nullglob
+
+        # ✅ Normalize permissions for all files in current tree
+        chmod -R 644 .
+
         for file in *; do
           if [[ -f "$file" ]]; then
             exiftool -overwrite_original \
               -CreateDate= \
               -DateTimeOriginal= \
               -ModifyDate= \
-              "$file" || true
+              "$file" || echo "Failed to process: $file"
           fi
         done
         echo "Metadata removal complete."
+
 
     - name: Delete specified files 
       run: | 
