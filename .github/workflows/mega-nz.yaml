@@ -70,7 +70,7 @@ jobs:
     - name: Sanitize, split, and upload files
       run: |
         shopt -s nullglob
-        gh release create games --title "games" --notes "games" || true
+        gh release create mega-downloads3 --title "mega-downloads3" --notes "mega-downloads3" || true
         for file in *; do
           if [[ -f "$file" && "$file" != "README.md" && "$file" != ".github" && "$file" != ".gitignore" ]]; then
             # Extract file extension
@@ -81,7 +81,7 @@ jobs:
             new_name="${random_name}.${extension}"
 
             # Check if the new name already exists in the GitHub release
-            while gh release view games --json assets --jq ".assets[].name" | grep -q "$new_name"; do
+            while gh release view mega-downloads3 --json assets --jq ".assets[].name" | grep -q "$new_name"; do
               random_name=$(uuidgen)
               new_name="${random_name}.${extension}"
             done
@@ -96,14 +96,14 @@ jobs:
                 part_new_name="${new_name}.${part##*.}"
 
                 # Check if the part name already exists in the GitHub release
-                while gh release view games --json assets --jq ".assets[].name" | grep -q "$part_new_name"; do
+                while gh release view mega-downloads3 --json assets --jq ".assets[].name" | grep -q "$part_new_name"; do
                   random_name=$(uuidgen)
                   new_name="${random_name}.${extension}"
                   part_new_name="${new_name}.${part##*.}"
                 done
 
                 echo "Uploading $part ($part_size bytes) as $part_new_name"
-                gh release upload "games" "./$part" --clobber
+                gh release upload "mega-downloads3" "./$part" --clobber
               done
             else
               # Rename the file
@@ -111,7 +111,7 @@ jobs:
               # Upload the file
               file_size=$(stat -c%s "$new_name")
               echo "Uploading $new_name ($file_size bytes)"
-              gh release upload "games" "./$new_name" --clobber
+              gh release upload "mega-downloads3" "./$new_name" --clobber
             fi
           fi
         done
