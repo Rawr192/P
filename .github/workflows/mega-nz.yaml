@@ -60,52 +60,55 @@ jobs:
         UBUNTU_VERSION=$(lsb_release -rs) 
         MEGACMD_DEB="megacmd-xUbuntu_${UBUNTU_VERSION}_amd64.deb" 
         rm -f "$MEGACMD_DEB"
-    - name: Sanitize, split, and upload files
-      run: |
-        shopt -s nullglob
-        gh release create mega-downloads7 --title "mega-downloads7" --notes "mega-downloads7" || true
-        for file in *; do
-          if [[ -f "$file" && "$file" != "README.md" && "$file" != ".github" && "$file" != ".gitignore" ]]; then
-            # Extract file extension
-            extension="${file##*.}"
-            # Generate a random file name
-            random_name=$(uuidgen)
-            # Combine the random name with the original file extension
-            new_name="${random_name}.${extension}"
-            # Check if the new name already exists in the GitHub release
-            while gh release view mega-downloads7 --json assets --jq ".assets[].name" | grep -q "$new_name"; do
+- name: Sanitize, split, and upload files
+  run: |
+    shopt -s nullglob
+    TAG_NAME="mega-downloads-$(date +%Y%m%d%H%M%S)"
+    gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "$TAG_NAME" || true
+    for file in *; do
+      if [[ -f "$file" && "$file" != "README.md" && "$file" != ".github" && "$file" != ".gitignore" ]]; then
+        extension="${file##*.}"
+        random_name=$(uuidgen)
+        new_name="${random_name}.${extension}"
+        while gh release view "$TAG_NAME" --json assets --jq ".assets[].name" | grep -q "$new_name"; do
+          random_name=$(uuidgen)
+          new_name="${random_name}.${extension}"
+        done
+
+        filesize=$(stat -c%s "$file" 2>/dev/null)
+        if [ -z "$filesize" ]; then
+          filesize=$(stat -f%z "$file" 2>/dev/null)
+        fi
+
+        if [ "$filesize" -gt 2000000000 ]; then
+          split -b 2000m "$file" "${new_name}.part_"
+          for part in "${new_name}.part_"*; do
+            part_size=$(stat -c%s "$part" 2>/dev/null)
+            if [ -z "$part_size" ]; then
+              part_size=$(stat -f%z "$part" 2>/dev/null)
+            fi
+            part_new_name="${new_name}.${part##*.}"
+            while gh release view "$TAG_NAME" --json assets --jq ".assets[].name" | grep -q "$part_new_name"; do
               random_name=$(uuidgen)
               new_name="${random_name}.${extension}"
+              part_new_name="${new_name}.${part##*.}"
             done
-            # Check file size and split if larger than 2GB
-            filesize=$(stat -c%s "$file")
-            if [ "$filesize" -gt 2000000000 ]; then
-              split -b 2000m "$file" "${new_name}.part_"
-              for part in "${new_name}.part_"*; do
-                # Ensure the correct file size and Content-Length are set
-                part_size=$(stat -c%s "$part")
-                part_new_name="${new_name}.${part##*.}"
-                # Check if the part name already exists in the GitHub release
-                while gh release view mega-downloads7 --json assets --jq ".assets[].name" | grep -q "$part_new_name"; do
-                  random_name=$(uuidgen)
-                  new_name="${random_name}.${extension}"
-                  part_new_name="${new_name}.${part##*.}"
-                done
-                echo "Uploading $part ($part_size bytes) as $part_new_name"
-                gh release upload "mega-downloads7" "./$part" --clobber
-              done
-            else
-              # Rename the file
-              mv "$file" "$new_name"
-              # Upload the file
-              file_size=$(stat -c%s "$new_name")
-              echo "Uploading $new_name ($file_size bytes)"
-              gh release upload "mega-downloads7" "./$new_name" --clobber
-            fi
+            echo "Uploading $part ($part_size bytes) as $part_new_name"
+            gh release upload "$TAG_NAME" "./$part" --clobber
+          done
+        else
+          mv "$file" "$new_name"
+          file_size=$(stat -c%s "$new_name" 2>/dev/null)
+          if [ -z "$file_size" ]; then
+            file_size=$(stat -f%z "$new_name" 2>/dev/null)
           fi
-        done
-      env:
-        GITHUB_TOKEN: ${{ secrets.PAT }}
+          echo "Uploading $new_name ($file_size bytes)"
+          gh release upload "$TAG_NAME" "./$new_name" --clobber
+        fi
+      fi
+    done
+  env:
+    GITHUB_TOKEN: ${{ secrets.PAT }}
 
     - name: List files after processing
       run: ls -la
