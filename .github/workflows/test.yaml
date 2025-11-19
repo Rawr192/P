@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        link: ${{ fromJson('["' + join(split(replace(github.event.inputs.links, ' ', ','), ','), '","') + '"]') }}
+        link: ${{ split(replace(github.event.inputs.links, ' ', ','), ',') }}
     steps:
       - name: Call mega-nz.yaml workflow
         uses: ./.github/workflows/mega-nz.yaml
