@@ -1,51 +1,35 @@
-name: Run mega-nz.yaml for each link
+name: Run mega-nz.yaml per link (no matrix)
 
 on:
   workflow_dispatch:
     inputs:
       mega_urls:
-        description: 'MEGA.nz URLs to download (up to 5, separated by commas or spaces)'
+        description: 'MEGA.nz URLs (comma or space separated)'
         required: true
 
 jobs:
-  prepare-matrix:
+  process-links:
     runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - id: set-matrix
-        shell: bash
-        run: |
-          # Replace commas with spaces, then split on spaces
-          URLS=$(echo "${{ github.event.inputs.mega_urls }}" | tr ',' ' ')
-          matrix="["
-          first=true
-          for url in $URLS; do
-            # Skip empty entries (if any)
-            if [ -z "$url" ]; then
-              continue
-            fi
-            if [ "$first" = true ]; then
-              first=false
-            else
-              matrix+=","
-            fi
-            # Escape quotes if needed
-            escaped_url=$(echo "$url" | sed 's/"/\\"/g')
-            matrix+="{\"mega_urls\":\"$escaped_url\"}"
-          done
-          matrix+="]"
-          # Strip whitespace/newlines from the JSON string
-          matrix_clean=$(echo "$matrix" | tr -d '[:space:]')
-          echo "matrix=$matrix_clean" >> $GITHUB_OUTPUT
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-  run-mega-nz:
-    needs: prepare-matrix
-    runs-on: ubuntu-latest
-    strategy:
-      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
-    steps:
-      - name: Call mega-nz.yaml workflow
-        uses: ./.github/workflows/mega-nz.yaml
-        with:
-          mega_urls: ${{ matrix.mega_urls }}
+      - name: Install jq (for processing JSON if needed)
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Loop through links and call reusable workflow or script
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          URLS=$(echo "${{ github.event.inputs.mega_urls }}" | tr ',' ' ')
+          for url in $URLS; do
+            echo "Processing link: $url"
+            # Example: Call mega-nz.yaml using GitHub REST API workflow dispatch (replace owner/repo/workflow)
+            curl -X POST "https://api.github.com/repos/${{ github.repository }}/actions/workflows/mega-nz.yaml/dispatches" \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -d "{\"ref\":\"${{ github.ref }}\", \"inputs\": {\"mega_urls\": \"$url\"}}"
+            # Optional: Add sleep to avoid API rate limits
+            sleep 3
+          done
