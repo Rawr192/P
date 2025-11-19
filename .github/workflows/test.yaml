@@ -1,4 +1,4 @@
-name: Run mega-nz.yaml per link (no matrix)
+name: Run mega-nz.yaml per link without matrix
 
 on:
   workflow_dispatch:
@@ -8,28 +8,23 @@ on:
         required: true
 
 jobs:
-  process-links:
+  dispatch-per-link:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Install jq (for processing JSON if needed)
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: Loop through links and call reusable workflow or script
+      - name: Split links and trigger mega-nz.yaml for each
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.ref }}
         run: |
           URLS=$(echo "${{ github.event.inputs.mega_urls }}" | tr ',' ' ')
           for url in $URLS; do
-            echo "Processing link: $url"
-            # Example: Call mega-nz.yaml using GitHub REST API workflow dispatch (replace owner/repo/workflow)
-            curl -X POST "https://api.github.com/repos/${{ github.repository }}/actions/workflows/mega-nz.yaml/dispatches" \
+            echo "Dispatching mega-nz.yaml workflow for URL: $url"
+            curl -X POST \
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
-              -d "{\"ref\":\"${{ github.ref }}\", \"inputs\": {\"mega_urls\": \"$url\"}}"
-            # Optional: Add sleep to avoid API rate limits
-            sleep 3
+              https://api.github.com/repos/$REPO/actions/workflows/mega-nz.yaml/dispatches \
+              -d "{\"ref\":\"$REF\",\"inputs\":{\"mega_urls\":\"$url\"}}"
+            sleep 3  # avoid API rate limiting
           done
