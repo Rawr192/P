@@ -4,9 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       mega_urls:
-        description: 'Enter links separated by commas or spaces'
+        description: 'MEGA.nz URLs to download (up to 5, separated by commas or spaces)'
         required: true
-        type: string
 
 jobs:
   prepare-matrix:
@@ -19,24 +18,34 @@ jobs:
         run: |
           # Replace commas with spaces, then split on spaces
           URLS=$(echo "${{ github.event.inputs.mega_urls }}" | tr ',' ' ')
-          # Build JSON array string for matrix
           matrix="["
+          first=true
           for url in $URLS; do
-            if [[ $matrix != "[" ]]; then
+            # Skip empty entries (if any)
+            if [ -z "$url" ]; then
+              continue
+            fi
+            if [ "$first" = true ]; then
+              first=false
+            else
               matrix+=","
             fi
-            matrix+="{\"link\":\"$url\"}"
+            # Escape quotes if needed
+            escaped_url=$(echo "$url" | sed 's/"/\\"/g')
+            matrix+="{\"mega_urls\":\"$escaped_url\"}"
           done
           matrix+="]"
-          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+          # Strip whitespace/newlines from the JSON string
+          matrix_clean=$(echo "$matrix" | tr -d '[:space:]')
+          echo "matrix=$matrix_clean" >> $GITHUB_OUTPUT
 
   run-mega-nz:
     needs: prepare-matrix
     runs-on: ubuntu-latest
     strategy:
-      matrix: ${{fromJson(needs.prepare-matrix.outputs.matrix)}}
+      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
     steps:
       - name: Call mega-nz.yaml workflow
         uses: ./.github/workflows/mega-nz.yaml
         with:
-          link: ${{ matrix.link }}
+          mega_urls: ${{ matrix.mega_urls }}
