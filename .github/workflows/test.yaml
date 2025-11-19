@@ -3,17 +3,38 @@ name: Run mega-nz.yaml for each link
 on:
   workflow_dispatch:
     inputs:
-      links:
+      mega_urls:
         description: 'Enter links separated by commas or spaces'
         required: true
         type: string
 
 jobs:
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        shell: bash
+        run: |
+          # Replace commas with spaces, then split on spaces
+          URLS=$(echo "${{ github.event.inputs.mega_urls }}" | tr ',' ' ')
+          # Build JSON array string for matrix
+          matrix="["
+          for url in $URLS; do
+            if [[ $matrix != "[" ]]; then
+              matrix+=","
+            fi
+            matrix+="{\"link\":\"$url\"}"
+          done
+          matrix+="]"
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+
   run-mega-nz:
+    needs: prepare-matrix
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        link: ${{ split(replace(github.event.inputs.links, ' ', ','), ',') }}
+      matrix: ${{fromJson(needs.prepare-matrix.outputs.matrix)}}
     steps:
       - name: Call mega-nz.yaml workflow
         uses: ./.github/workflows/mega-nz.yaml
