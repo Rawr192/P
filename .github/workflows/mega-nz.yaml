@@ -12,103 +12,105 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
-    - name: Maximize disk space
-      uses: easimon/maximize-build-space@v10
-      with:
-        remove-dotnet: true
-        remove-android: true
-        remove-haskell: true
-        remove-codeql: true
-        remove-docker-images: true
-        
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Maximize disk space
+        uses: easimon/maximize-build-space@v10
+        with:
+          remove-dotnet: true
+          remove-android: true
+          remove-haskell: true
+          remove-codeql: true
+          remove-docker-images: true
 
-    - name: Install MEGAcmd
-      run: |
-        sudo apt-get update 
-        sudo apt-get install -y wget lsb-release
-        UBUNTU_VERSION=$(lsb_release -rs) 
-        wget -P /tmp "https://mega.nz/linux/repo/xUbuntu_${UBUNTU_VERSION}/amd64/megacmd-xUbuntu_${UBUNTU_VERSION}_amd64.deb" 
-        sudo apt install -y "/tmp/megacmd-xUbuntu_${UBUNTU_VERSION}_amd64.deb"
-    - name: Verify MEGAcmd installation
-      run: mega-version
-        
-    - name: Download from MEGA.nz
-      run: |
-        # Replace commas with spaces, then split on spaces
-        URLS=$(echo "${{ inputs.mega_urls }}" | tr ',' ' ')
-        for url in $URLS; do
-          mega-get "$url"
-        done
-    
-    - name: List downloaded files
-      run: ls -la
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Delete specified files 
-      run: | 
-        rm -f LICENSE 
-        rm -f "Piece Size Table.csv" 
-        rm -f README.md 
-        rm -f index.html 
-        rm -f link.url 
-        rm -f p.py 
-        rm -f test.py 
-        rm -f test2.py 
-        UBUNTU_VERSION=$(lsb_release -rs) 
-        MEGACMD_DEB="megacmd-xUbuntu_${UBUNTU_VERSION}_amd64.deb" 
-        rm -f "$MEGACMD_DEB"
-- name: Sanitize, split, and upload files
-  run: |
-    shopt -s nullglob
-    TAG_NAME="mega-downloads-$(date +%Y%m%d%H%M%S)"
-    gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "$TAG_NAME" || true
-    for file in *; do
-      if [[ -f "$file" && "$file" != "README.md" && "$file" != ".github" && "$file" != ".gitignore" ]]; then
-        extension="${file##*.}"
-        random_name=$(uuidgen)
-        new_name="${random_name}.${extension}"
-        while gh release view "$TAG_NAME" --json assets --jq ".assets[].name" | grep -q "$new_name"; do
-          random_name=$(uuidgen)
-          new_name="${random_name}.${extension}"
-        done
+      - name: Install MEGAcmd
+        run: |
+          sudo apt-get update 
+          sudo apt-get install -y wget lsb-release
+          UBUNTU_VERSION=$(lsb_release -rs) 
+          wget -P /tmp "https://mega.nz/linux/repo/xUbuntu_${UBUNTU_VERSION}/amd64/megacmd-xUbuntu_${UBUNTU_VERSION}_amd64.deb" 
+          sudo apt install -y "/tmp/megacmd-xUbuntu_${UBUNTU_VERSION}_amd64.deb"
 
-        filesize=$(stat -c%s "$file" 2>/dev/null)
-        if [ -z "$filesize" ]; then
-          filesize=$(stat -f%z "$file" 2>/dev/null)
-        fi
+      - name: Verify MEGAcmd installation
+        run: mega-version
 
-        if [ "$filesize" -gt 2000000000 ]; then
-          split -b 2000m "$file" "${new_name}.part_"
-          for part in "${new_name}.part_"*; do
-            part_size=$(stat -c%s "$part" 2>/dev/null)
-            if [ -z "$part_size" ]; then
-              part_size=$(stat -f%z "$part" 2>/dev/null)
-            fi
-            part_new_name="${new_name}.${part##*.}"
-            while gh release view "$TAG_NAME" --json assets --jq ".assets[].name" | grep -q "$part_new_name"; do
+      - name: Download from MEGA.nz
+        run: |
+          # Replace commas with spaces, then split on spaces
+          URLS=$(echo "${{ inputs.mega_urls }}" | tr ',' ' ')
+          for url in $URLS; do
+            mega-get "$url"
+          done
+
+      - name: List downloaded files
+        run: ls -la
+
+      - name: Delete specified files 
+        run: | 
+          rm -f LICENSE 
+          rm -f "Piece Size Table.csv" 
+          rm -f README.md 
+          rm -f index.html 
+          rm -f link.url 
+          rm -f p.py 
+          rm -f test.py 
+          rm -f test2.py 
+          UBUNTU_VERSION=$(lsb_release -rs) 
+          MEGACMD_DEB="megacmd-xUbuntu_${UBUNTU_VERSION}_amd64.deb" 
+          rm -f "$MEGACMD_DEB"
+
+      - name: Sanitize, split, and upload files
+        run: |
+          shopt -s nullglob
+          TAG_NAME="mega-downloads-$(date +%Y%m%d%H%M%S)"
+          gh release create "$TAG_NAME" --title "$TAG_NAME" --notes "$TAG_NAME" || true
+          for file in *; do
+            if [[ -f "$file" && "$file" != "README.md" && "$file" != ".github" && "$file" != ".gitignore" ]]; then
+              extension="${file##*.}"
               random_name=$(uuidgen)
               new_name="${random_name}.${extension}"
-              part_new_name="${new_name}.${part##*.}"
-            done
-            echo "Uploading $part ($part_size bytes) as $part_new_name"
-            gh release upload "$TAG_NAME" "./$part" --clobber
+              while gh release view "$TAG_NAME" --json assets --jq ".assets[].name" | grep -q "$new_name"; do
+                random_name=$(uuidgen)
+                new_name="${random_name}.${extension}"
+              done
+      
+              filesize=$(stat -c%s "$file" 2>/dev/null)
+              if [ -z "$filesize" ]; then
+                filesize=$(stat -f%z "$file" 2>/dev/null)
+              fi
+      
+              if [ "$filesize" -gt 2000000000 ]; then
+                split -b 2000m "$file" "${new_name}.part_"
+                for part in "${new_name}.part_"*; do
+                  part_size=$(stat -c%s "$part" 2>/dev/null)
+                  if [ -z "$part_size" ]; then
+                    part_size=$(stat -f%z "$part" 2>/dev/null)
+                  fi
+                  part_new_name="${new_name}.${part##*.}"
+                  while gh release view "$TAG_NAME" --json assets --jq ".assets[].name" | grep -q "$part_new_name"; do
+                    random_name=$(uuidgen)
+                    new_name="${random_name}.${extension}"
+                    part_new_name="${new_name}.${part##*.}"
+                  done
+                  echo "Uploading $part ($part_size bytes) as $part_new_name"
+                  gh release upload "$TAG_NAME" "./$part" --clobber
+                done
+              else
+                mv "$file" "$new_name"
+                file_size=$(stat -c%s "$new_name" 2>/dev/null)
+                if [ -z "$file_size" ]; then
+                  file_size=$(stat -f%z "$new_name" 2>/dev/null)
+                fi
+                echo "Uploading $new_name ($file_size bytes)"
+                gh release upload "$TAG_NAME" "./$new_name" --clobber
+              fi
+            fi
           done
-        else
-          mv "$file" "$new_name"
-          file_size=$(stat -c%s "$new_name" 2>/dev/null)
-          if [ -z "$file_size" ]; then
-            file_size=$(stat -f%z "$new_name" 2>/dev/null)
-          fi
-          echo "Uploading $new_name ($file_size bytes)"
-          gh release upload "$TAG_NAME" "./$new_name" --clobber
-        fi
-      fi
-    done
-  env:
-    GITHUB_TOKEN: ${{ secrets.PAT }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
 
-    - name: List files after processing
-      run: ls -la
+      - name: List files after processing
+        run: ls -la
