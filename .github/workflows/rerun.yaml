@@ -1,10 +1,15 @@
-name: Rerun yesterday's failed "Download from MEGA.nz" workflows
+name: Rerun failed "Download from MEGA.nz" workflows for a date
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      run_date:
+        description: "Date (UTC) in format YYYY-MM-DD"
+        required: true
+        type: string
 
 jobs:
-  rerun-failed-mega-yesterday:
+  rerun-failed-mega-by-date:
     runs-on: ubuntu-latest
     permissions:
       actions: write
@@ -13,8 +18,8 @@ jobs:
         run: |
           type -p gh >/dev/null || {
             curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-              | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-            sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+              | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+            && sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
             echo "deb [arch=$(dpkg --print-architecture) \
               signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] \
               https://cli.github.com/packages stable main" \
@@ -23,28 +28,22 @@ jobs:
             sudo apt-get install -y gh jq
           }
 
-      - name: Compute yesterday (UTC)
-        id: dates
-        run: |
-          YESTERDAY_DATE=$(date -u -d "yesterday" +"%Y-%m-%d")
-          echo "yesterday=$YESTERDAY_DATE" >> "$GITHUB_OUTPUT"
-
       - name: Authenticate gh
         env:
           GH_TOKEN: ${{ secrets.TOKEN }}
         run: |
           gh auth status || gh auth login --with-token <<< "$GH_TOKEN"
 
-      - name: Find yesterday's failed runs and rerun failed jobs
+      - name: Find failed runs for given date and rerun failed jobs
         env:
           GH_TOKEN: ${{ secrets.TOKEN }}
           REPO: ${{ github.repository }}
-          YESTERDAY: ${{ steps.dates.outputs.yesterday }}
+          RUN_DATE: ${{ github.event.inputs.run_date }}
         run: |
           set -euo pipefail
 
-          FROM="${YESTERDAY}T00:00:00Z"
-          TO="${YESTERDAY}T23:59:59Z"
+          FROM="${RUN_DATE}T00:00:00Z"
+          TO="${RUN_DATE}T23:59:59Z"
 
           echo "Selecting runs created between $FROM and $TO"
 
