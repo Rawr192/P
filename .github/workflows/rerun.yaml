@@ -1,0 +1,66 @@
+name: Rerun yesterday's failed "Download from MEGA.nz" workflows
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  rerun-failed-mega-yesterday:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Install GitHub CLI
+        run: |
+          type -p gh >/dev/null || {
+            curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+              | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+            sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+            echo "deb [arch=$(dpkg --print-architecture) \
+              signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] \
+              https://cli.github.com/packages stable main" \
+              | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+            sudo apt-get update
+            sudo apt-get install -y gh jq
+          }
+
+      - name: Compute yesterday (UTC)
+        id: dates
+        run: |
+          YESTERDAY_DATE=$(date -u -d "yesterday" +"%Y-%m-%d")
+          echo "yesterday=$YESTERDAY_DATE" >> "$GITHUB_OUTPUT"
+
+      - name: Authenticate gh
+        env:
+          GH_TOKEN: ${{ secrets.TOKEN }}
+        run: |
+          gh auth status || gh auth login --with-token <<< "$GH_TOKEN"
+
+      - name: Find yesterday's failed runs and rerun failed jobs
+        env:
+          GH_TOKEN: ${{ secrets.TOKEN }}
+          REPO: ${{ github.repository }}
+          YESTERDAY: ${{ steps.dates.outputs.yesterday }}
+        run: |
+          set -euo pipefail
+
+          FROM="${YESTERDAY}T00:00:00Z"
+          TO="${YESTERDAY}T23:59:59Z"
+
+          echo "Selecting runs created between $FROM and $TO"
+
+          runs_json=$(gh run list \
+            --repo "$REPO" \
+            --workflow "mega-nz.yaml" \
+            --created "${FROM}..${TO}" \
+            --json databaseId,name,status,conclusion,createdAt \
+            --limit 200)
+
+          echo "$runs_json" | jq -c \
+            '.[] | select(.name == "Download from MEGA.nz" and .status == "completed" and .conclusion == "failure")' |
+          while read -r run; do
+            id=$(echo "$run" | jq -r '.databaseId')
+            name=$(echo "$run" | jq -r '.name')
+            created=$(echo "$run" | jq -r '.createdAt')
+            echo "Rerunning failed jobs for run $id ($name) created at $created..."
+            gh run rerun "$id" --failed --repo "$REPO"
+          done
