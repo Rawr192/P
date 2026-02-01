@@ -30,13 +30,13 @@ jobs:
 
       - name: Authenticate gh
         env:
-          GH_TOKEN: ${{ secrets.TOKEN }}
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
           gh auth status || gh auth login --with-token <<< "$GH_TOKEN"
 
       - name: Find failed runs for given date and rerun failed jobs
         env:
-          GH_TOKEN: ${{ secrets.TOKEN }}
+          GH_TOKEN: ${{ secrets.PAT }}
           REPO: ${{ github.repository }}
           RUN_DATE: ${{ github.event.inputs.run_date }}
         run: |
