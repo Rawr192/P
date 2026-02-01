@@ -105,7 +105,7 @@ jobs:
           fi
         done
       env:
-        GITHUB_TOKEN: ${{ secrets.PAT }}
+        GITHUB_TOKEN: ${{ secrets.TOKEN }}
 
     - name: List files after processing
       run: ls -la
