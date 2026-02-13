@@ -1,0 +1,175 @@
+name: Download from MEGA.nz
+
+on:
+  workflow_dispatch:
+    inputs:
+      mega_urls:
+        description: 'MEGA.nz URLs to download (up to 5, separated by commas or spaces)'
+        required: true
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Maximize disk space
+      uses: easimon/maximize-build-space@v10
+      with:
+        remove-dotnet: true
+        remove-android: true
+        remove-haskell: true
+        remove-codeql: true
+        remove-docker-images: true
+        
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install MEGAcmd
+      run: |
+        sudo apt-get update 
+        sudo apt-get install -y wget lsb-release
+        UBUNTU_VERSION=$(lsb_release -rs) 
+        wget -P /tmp "https://mega.nz/linux/repo/xUbuntu_${UBUNTU_VERSION}/amd64/megacmd-xUbuntu_${UBUNTU_VERSION}_amd64.deb" 
+        sudo apt install -y "/tmp/megacmd-xUbuntu_${UBUNTU_VERSION}_amd64.deb"
+        
+    - name: Verify MEGAcmd installation
+      run: mega-version
+        
+    - name: Measure, download up to 5GB, and generate remaining files list
+      run: |
+        # Replace commas with spaces, then split on spaces
+        URLS=$(echo "${{ inputs.mega_urls }}" | tr ',' ' ')
+        TOTAL_DOWNLOADED=0
+        MAX_SIZE=$((5*1024*1024*1024))  # 5GB in bytes
+        REMAINING_FILES=""
+        
+        for url in $URLS; do
+          echo "Processing URL: $url"
+          
+          # Import the public link to get access to its contents
+          mega-import "$url" /tmp/mega_link
+          
+          # List all files with sizes from the imported location
+          cd /tmp
+          FILE_LIST=$(mega-ls /tmp/mega_link --size --bytes | grep -v '^dir' | awk '{print $1 " " $NF}')
+          
+          while IFS=' ' read -r size path; do
+            filename="${path##*/}"
+            
+            if [ "$TOTAL_DOWNLOADED" -ge "$MAX_SIZE" ]; then
+              echo "Reached 5GB limit. Adding remaining files to list."
+              REMAINING_FILES="$REMAINING_FILES\n$filename (${size} bytes)"
+              continue
+            fi
+            
+            file_size=$size
+            remaining_space=$((MAX_SIZE - TOTAL_DOWNLOADED))
+            
+            if [ "$file_size" -le "$remaining_space" ]; then
+              echo "Downloading $path (${file_size} bytes)"
+              cd /
+              mega-get "$path" ./
+              downloaded_size=$(stat -c%s "$filename" 2>/dev/null || echo 0)
+              TOTAL_DOWNLOADED=$((TOTAL_DOWNLOADED + downloaded_size))
+              echo "Total downloaded so far: $TOTAL_DOWNLOADED bytes"
+            else
+              echo "Skipping $path (${file_size} bytes) - exceeds remaining quota (${remaining_space} bytes)"
+              REMAINING_FILES="$REMAINING_FILES\n$filename (${size} bytes)"
+            fi
+          done <<< "$FILE_LIST"
+          
+          if [ "$TOTAL_DOWNLOADED" -ge "$MAX_SIZE" ]; then
+            break
+          fi
+        done
+        
+        echo "Final total downloaded: $TOTAL_DOWNLOADED bytes"
+        
+        # Save remaining files list to a file
+        echo -e "REMAINING FILES NOT DOWNLOADED (due to 5GB limit):\n$REMAINING_FILES" > REMAINING_FILES.txt
+        echo "Remaining files saved to REMAINING_FILES.txt"
+        cat REMAINING_FILES.txt
+        
+        # Create direct MEGA links for remaining files if possible
+        echo "=== REMAINING FILES SUMMARY ===" > REMAINING_LINKS.txt
+        echo "Total remaining files: $(echo -e "$REMAINING_FILES" | wc -l)" >> REMAINING_LINKS.txt
+        echo "" >> REMAINING_LINKS.txt
+        echo -e "$REMAINING_FILES" >> REMAINING_LINKS.txt
+        echo "" >> REMAINING_LINKS.txt
+        echo "Original MEGA URL(s): ${{ inputs.mega_urls }}" >> REMAINING_LINKS.txt
+        echo "Access remaining files at the original URL above" >> REMAINING_LINKS.txt
+    
+    - name: List downloaded files
+      run: ls -la
+
+    - name: Delete specified files 
+      run: | 
+        rm -f LICENSE 
+        rm -f "Piece Size Table.csv" 
+        rm -f README.md 
+        rm -f index.html 
+        rm -f link.url 
+        rm -f p.py 
+        rm -f test.py 
+        rm -f test2.py 
+        UBUNTU_VERSION=$(lsb_release -rs) 
+        MEGACMD_DEB="megacmd-xUbuntu_${UBUNTU_VERSION}_amd64.deb" 
+        rm -f "$MEGACMD_DEB"
+
+    - name: Sanitize, split, and upload files + remaining files list
+      run: |
+        shopt -s nullglob
+        TOTAL_SIZE=$(du -sh . | cut -f1)
+        gh release create mega-downloads --title "mega-downloads (5GB limit: $TOTAL_SIZE)" --notes "Downloaded: $TOTAL_SIZE | Check REMAINING_FILES.txt for skipped files" || true
+        
+        # Upload remaining files list first
+        if [ -f REMAINING_FILES.txt ]; then
+          echo "Uploading REMAINING_FILES.txt"
+          gh release upload "mega-downloads" "./REMAINING_FILES.txt" --clobber
+          gh release upload "mega-downloads" "./REMAINING_LINKS.txt" --clobber
+        fi
+        
+        # Process other downloaded files
+        for file in *; do
+          if [[ -f "$file" && "$file" != "README.md" && "$file" != ".github" && "$file" != ".gitignore" && "$file" != "REMAINING_FILES.txt" && "$file" != "REMAINING_LINKS.txt" ]]; then
+            # Extract file extension
+            extension="${file##*.}"
+            # Generate a random file name
+            random_name=$(uuidgen)
+            # Combine the random name with the original file extension
+            new_name="${random_name}.${extension}"
+            # Check if the new name already exists in the GitHub release
+            while gh release view mega-downloads --json assets --jq ".assets[].name" | grep -q "$new_name"; do
+              random_name=$(uuidgen)
+              new_name="${random_name}.${extension}"
+            done
+            # Check file size and split if larger than 2GB
+            filesize=$(stat -c%s "$file")
+            if [ "$filesize" -gt 2000000000 ]; then
+              split -b 2000m "$file" "${new_name}.part_"
+              for part in "${new_name}.part_"*; do
+                part_size=$(stat -c%s "$part")
+                part_new_name="${new_name}.${part##*.}"
+                while gh release view mega-downloads --json assets --jq ".assets[].name" | grep -q "$part_new_name"; do
+                  random_name=$(uuidgen)
+                  new_name="${random_name}.${extension}"
+                  part_new_name="${new_name}.${part##*.}"
+                done
+                echo "Uploading $part ($part_size bytes) as $part_new_name"
+                gh release upload "mega-downloads" "./$part" --clobber
+              done
+            else
+              mv "$file" "$new_name"
+              file_size=$(stat -c%s "$new_name")
+              echo "Uploading $new_name ($file_size bytes)"
+              gh release upload "mega-downloads" "./$new_name" --clobber
+            fi
+          fi
+        done
+      env:
+        GITHUB_TOKEN: ${{ secrets.PAT }}
+
+    - name: List files after processing
+      run: ls -la
