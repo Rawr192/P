@@ -1,4 +1,4 @@
-name: List links from MEGA folder link
+name: List MEGA folder file links
 
 on:
   workflow_dispatch:
@@ -6,28 +6,46 @@ on:
       mega_folder_link:
         description: 'Public MEGA folder link'
         required: true
+        type: string
+      mega_email:
+        description: 'Your MEGA account email'
+        required: true
+        type: string
+      mega_password:
+        description: 'Your MEGA account password'
+        required: true
+        type: string
 
 jobs:
-  list-mega-links:
+  list-links:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Install Megatools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y megatools
-
-      - name: List all file links from folder link
+      - name: Install MEGAcmd and get links
         env:
+          MEGA_EMAIL: ${{ github.event.inputs.mega_email }}
+          MEGA_PASSWORD: ${{ github.event.inputs.mega_password }}
           MEGA_FOLDER_LINK: ${{ github.event.inputs.mega_folder_link }}
         run: |
-          echo "Folder: $MEGA_FOLDER_LINK"
-          # `megatools ls -e` lists files and prints public download links.[web:17][web:19]
-          megatools ls -R -e "$MEGA_FOLDER_LINK" | \
-            awk '/https?:\/\/mega\.nz/ { print $NF }' | \
-            sort -u | tee mega_links.txt
-
-      - name: Upload links as artifact
+          sudo apt-get update
+          sudo apt-get install -y megacmd
+          
+          echo "Logging in..."
+          mega-login "$MEGA_EMAIL" "$MEGA_PASSWORD"
+          
+          echo "Importing folder..."
+          mega-import "$MEGA_FOLDER_LINK" /incoming
+          
+          echo "Exporting all file links..."
+          mega-export -a -r /incoming
+          
+          echo "All file links:"
+          mega-export /incoming | grep "https://mega.nz" | awk '{for(i=1;i<=NF;i++) if($i~/https:/) print $i}' | sort -u > mega_links.txt
+          
+          cat mega_links.txt
+          
+          mega-logout || true
+      
+      - name: Upload links
         uses: actions/upload-artifact@v4
         with:
           name: mega-links
