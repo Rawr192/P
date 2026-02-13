@@ -20,15 +20,23 @@ jobs:
   list-links:
     runs-on: ubuntu-latest
     steps:
-      - name: Install MEGAcmd and get links
+      - name: Install MEGAcmd
+        run: |
+          sudo apt-get update 
+          sudo apt-get install -y wget lsb-release
+          UBUNTU_VERSION=$(lsb_release -rs) 
+          wget -P /tmp "https://mega.nz/linux/repo/xUbuntu_${UBUNTU_VERSION}/amd64/megacmd-xUbuntu_${UBUNTU_VERSION}_amd64.deb" 
+          sudo apt install -y "/tmp/megacmd-xUbuntu_${UBUNTU_VERSION}_amd64.deb"
+      
+      - name: Verify MEGAcmd installation
+        run: mega-version
+      
+      - name: Get all file links
         env:
           MEGA_EMAIL: ${{ github.event.inputs.mega_email }}
           MEGA_PASSWORD: ${{ github.event.inputs.mega_password }}
           MEGA_FOLDER_LINK: ${{ github.event.inputs.mega_folder_link }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y megacmd
-          
           echo "Logging in..."
           mega-login "$MEGA_EMAIL" "$MEGA_PASSWORD"
           
